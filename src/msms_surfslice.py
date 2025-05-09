@@ -1,21 +1,18 @@
-import numpy as np
-import pandas as pd
-import networkx as nx
-import mdtraj as md
-from netCDF4 import Dataset
-from shapely.geometry import Point, Polygon, MultiPolygon
-from shapely.ops import unary_union
-from multiprocess.pool import Pool
-
-import os
 from itertools import product
-from multiprocessing import cpu_count
+import pandas as pd
+from shapely.ops import unary_union
+from msms import prot_msms, trgs_zslice_vertices, triangle_zcut
+from polygons_construct import linesegs2polygons
 
-from utils.output_namespace import trajectory, grotop_file4traj_id
-from geometry.circle_geoms import union_of_disks, union_cvxhull
-from geometry.msms import prot_msms, triangle_zcut, trgs_zslice_vertices
-from geometry.polygons_construct import linesegs2polygons
-from utils.core_utilities import overlapping_split
+
+import networkx as nx
+import numpy as np
+from shapely.geometry import Point, Polygon
+
+from slices import plot_boundary
+
+
+# from utils.core_utilities import overlapping_split
 
 class dag_ends:
     def __init__(self, DiGraph):
@@ -42,6 +39,7 @@ class dag_ends:
         _, num_descendants = self.node_relations(n)
         return (num_descendants == 0)
 
+
 class root2leaf_longest(dag_ends):
     def __init__(self, DiGraph):
         super().__init__(DiGraph)
@@ -49,14 +47,15 @@ class root2leaf_longest(dag_ends):
         all_paths_set = [list(nx.all_simple_paths(self.graph, *root_leaf)) for root_leaf in product(self.roots, self.leafs)]
         self.rootleaf_longest = [max(paths_set, key=len) for paths_set in all_paths_set if len(paths_set) > 0]
 
+
 def draw_molsection(enclosure_dag, polygons_list):
     rootleaf_analysis = root2leaf_longest(enclosure_dag)
 
     draw_instruction = rootleaf_analysis.rootleaf_longest
-    
+
     # Reverse to start from the "outermost" layer
     draw_instruction = [path[::-1] for path in draw_instruction]
-    
+
     leafs = rootleaf_analysis.leafs
     # All paths should start with one of the leaf nodes
     assert np.all([(path[0] in leafs) for path in draw_instruction])
@@ -65,7 +64,7 @@ def draw_molsection(enclosure_dag, polygons_list):
 
     if len(draw_instruction) > 0:
         max_clave_chain = len(max(draw_instruction, key=len))
-        
+
         draw_instruction_matrix = np.tile(-1, (len(draw_instruction), max_clave_chain))
         for i, instr in enumerate(draw_instruction):
             draw_instruction_matrix[i,:len(instr)] = instr
@@ -80,13 +79,15 @@ def draw_molsection(enclosure_dag, polygons_list):
                 solid = solid.union(clave_level_shapes)
             else:
                 solid = solid.difference(clave_level_shapes)
-    
+
     return solid
+
 
 def enclosed_in(a, b):
     if a == b:
         return False
     return a.within(b)
+
 
 class msms_surfslice:
     def __init__(self, msms_trgs, zlevel, rtol=1e-10):
@@ -103,7 +104,7 @@ class msms_surfslice:
         else:
             # Build the slice shapes with polygons
             polymake = linesegs2polygons(self.linesegs_xy)
-            
+
             self.polygons_collect = polymake.build_polygons()
             # Changed from verts_xy to unique_vertices_xy in case of exclusion of vert_indices due to not forming lines
             # Index mismatch can result
@@ -134,69 +135,6 @@ class msms_surfslice:
         # connected_subgraphs = [enclosure_dag.subgraph(c) for c in nx.weakly_connected_components(enclosure_dag)]
         return enclosure_dag
 
-def select_voids(centers, radii, precision=10e-8):
-    disks = union_of_disks(centers, radii)
-    cvh = union_cvxhull(centers)
-
-    protein_closed = []
-    for void in cvh.difference(disks):
-        closed_by_prot = True
-        # Determining whether segments overlap is rather tricky complicated by floating point precision
-        for p1, p2 in overlapping_split(void.boundary.coords):
-            if Point(p1).distance(cvh.boundary) < precision and Point(p2).distance(cvh.boundary) < precision:
-                closed_by_prot = False
-                break
-        if closed_by_prot:
-            protein_closed.append(void)
-    protein_closed = MultiPolygon(protein_closed)
-    return protein_closed
-
-### Protein specific ###
-def prot_section(prot_xyz, prot_top, zlevel, padding, color=False):
-    protxy = prot_xyz[:,:2]
-    protz = prot_xyz[:,2]
-    atomic_radii = np.array([a.element.radius + padding for a in prot_top.top.atoms])
-    # Some geometry
-    at_level = np.less(np.abs(protz - zlevel), atomic_radii)
-    # Radii projection on the given xy-plane at zlevel
-    proj_radii = np.sqrt(atomic_radii[at_level]**2 - (protz[at_level] - zlevel)**2)
-
-    level_protxy = protxy[at_level]
-    # Union of the circles onto the plane
-    region_shape = union_of_disks(level_protxy, proj_radii)
-
-    if color:
-        color_scheme = {'N': 'blue', 'O': 'red'}
-        atom_types = np.array([a.element.symbol for a in prot_top.top.atoms])
-        color_list = [color_scheme.get(e) for e in atom_types[at_level]]
-        color_info = zip(level_protxy, proj_radii, color_list)
-        return region_shape, color_info
-    return region_shape, None
-
-def zslice(xyz, prot_top, zlevel, center, radius, probe_radius, color=False):
-    sliced_protein, color_info = prot_section(prot_xyz=xyz, prot_top=prot_top, zlevel=zlevel, padding=probe_radius, color=color)
-    # Area: used to measure pore accessible area
-    cylinderxy = Point(*center).buffer(radius)
-    access_area = cylinderxy.difference(sliced_protein)
-    return sliced_protein, cylinderxy, access_area, color_info
-
-def plot_boundary(axs, shapeset, color="black", linestyle="-"):
-    try:
-        shapeset.boundary
-    except:
-        return
-    else:
-        try:
-            shapeset.boundary.geoms
-        except:
-            geos = [shapeset.boundary]
-        else:
-            geos = shapeset.boundary.geoms
-
-    for dA in geos:
-        x, y = dA.xy
-        axs.plot(x, y, color=color, ls=linestyle)
-    return
 
 class msms_slices(prot_msms):
     def __init__(self, traj_id, probe_radius=1.4, look_for=False):
@@ -213,7 +151,7 @@ class msms_slices(prot_msms):
         prot_slice = surfslice.slice
         cylinderxy = Point(*center).buffer(radius)
         access_area = cylinderxy.difference(prot_slice)
-        return prot_slice, cylinderxy, access_area        
+        return prot_slice, cylinderxy, access_area
 
     def slice_run(self, lower, upper, incr, center=(25,50), radius=10.5, parallel=False):
         zrange = np.arange(lower, upper+incr, incr)
@@ -229,7 +167,7 @@ class msms_slices(prot_msms):
         #         numprocs = int(os.environ['SLURM_NPROCS'])
         #     else:
         #         numprocs = cpu_count()        
-            
+
         #     with Pool(numprocs) as p:
         #         shapes_collect = p.starmap(proc, fz_pairs)  
         #         shapes_collect = [fz+output for fz, output in zip(product(np.arange(self.nframes), np.arange(lower,upper+incr,incr)), shapes_collect)]      
@@ -241,7 +179,7 @@ class msms_slices(prot_msms):
                 print(f,z)
                 prot_slice, _, access_area = self.zslice(f, z, center, radius)
                 shapes_collect.append((f, z) + (prot_slice, access_area))
-        
+
         # Turn into df
         slice_df = pd.DataFrame(shapes_collect, columns=["frame", "z", "prot", "void"])
         self.slice_df = slice_df
@@ -257,72 +195,3 @@ class msms_slices(prot_msms):
         axs.set_aspect('equal', adjustable='box', anchor='C')
         axs.set_xlim(-20,60)
         axs.set_ylim(10,90)
-
-class prot_slices:
-    def __init__(self, traj_id, from_nc=True, probe_radius=0.14):
-        self.traj_id = traj_id
-        self.from_nc = from_nc
-        self.probe_radius = probe_radius
-
-        if self.from_nc:
-            prot_xyz = Dataset("data/xyz/protein_xyz.nc", "r", format="NETCDF4", persist=True)
-            self.nframes = int(prot_xyz.variables['nframes'][self.traj_id].data)
-            self.xyz = prot_xyz.variables["coordinate"][self.traj_id,:,:,:]
-            self.natoms = np.sum(~self.xyz[0,:,0].mask)
-            ref = md.load(grotop_file4traj_id(self.traj_id))
-            self.ref = ref.atom_slice(ref.top.select("protein"))
-            prot_xyz.close()
-        else:
-            traj = md.load(trajectory(traj_id), top=grotop_file4traj_id(traj_id))
-            self.ref = traj.atom_slice(traj.top.select("protein"))
-            self.xyz = self.ref.xyz
-            self.nframes = traj.n_frames
-            self.natoms = self.ref.n_atoms
-
-    def _zslice(self, frame, zlevel, center, radius, color=False):
-        return zslice(xyz=self.xyz[frame,:self.natoms,:], prot_top=self.ref, zlevel=zlevel, center=center, radius=radius, probe_radius=self.probe_radius, color=color)
-
-    def slice_run(self, lower, upper, incr, center=(2.5,5), radius=(300**0.5)/10, parallel=False):
-        zrange = np.arange(lower, upper+incr, incr)
-
-        if parallel:
-            def proc(xyz, zlevel):
-                zslice_shapes = zslice(xyz, prot_top=self.ref, zlevel=zlevel, center=center, radius=radius, probe_radius=self.probe_radius)
-                prot, _, accessible, _ = zslice_shapes
-                return prot, accessible
-
-            fz_pairs = [(xyz, z) for xyz, z in product(self.xyz[:,:self.natoms,:], np.arange(lower,upper+incr,incr))]
-
-            if 'SLURM_NPROCS' in os.environ:
-                numprocs = int(os.environ['SLURM_NPROCS'])
-            else:
-                numprocs = cpu_count()        
-            
-            with Pool(numprocs) as p:
-                shapes_collect = p.starmap(proc, fz_pairs)  
-                shapes_collect = [fz+output for fz, output in zip(product(np.arange(self.nframes), np.arange(lower,upper+incr,incr)), shapes_collect)]      
-        else:
-            shapes_collect = []
-            for f in range(0, self.nframes):
-                print("Analyzing frame %d out of %d" % (f, self.nframes))
-                for z in zrange:
-                    zslice_shapes = self._zslice(zlevel=z, center=center, radius=radius, frame=f)
-                    prot, _, accessible, _ = zslice_shapes
-                    shapes_collect.append((f, z) + (prot, accessible))
-        
-        # Turn into df
-        slice_df = pd.DataFrame(shapes_collect, columns=["frame", "z", "prot", "void"])
-        self.slice_df = slice_df
-        return self.slice_df
-
-    def plot_slice(self, axs, prot, cylinder, accessible):
-        # Plot the protein slice boundaries
-        plot_boundary(axs, prot, color="black")
-        plot_boundary(axs, accessible, color="red")
-
-        x, y = cylinder.boundary.xy
-        axs.plot(x, y, color="cyan", ls="--")
-
-        axs.set_aspect('equal', adjustable='box', anchor='C')
-        axs.set_xlim(-2,6)
-        axs.set_ylim(1,9)
