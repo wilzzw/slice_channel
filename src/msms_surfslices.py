@@ -9,7 +9,7 @@ import networkx as nx
 import numpy as np
 from shapely.geometry import Point, Polygon
 
-from slices import plot_boundary
+from slices import _plot_boundary
 
 
 # from utils.core_utilities import overlapping_split
@@ -186,8 +186,8 @@ class msms_slices(prot_msms):
 
     def plot_slice(self, axs, prot, cylinder, accessible):
         # Plot the protein slice boundaries
-        plot_boundary(axs, prot, color="black")
-        plot_boundary(axs, accessible, color="red")
+        _plot_boundary(axs, prot, color="black")
+        _plot_boundary(axs, accessible, color="red")
 
         x, y = cylinder.boundary.xy
         axs.plot(x, y, color="cyan", ls="--")
