@@ -48,11 +48,11 @@ class pore_slices:
         #     self.nframes = traj.n_frames
         #     self.natoms = self.ref.n_atoms
 
-    def _zslice(self, frame, zlevel, center, radius, color=False):
+    def zslice(self, frame, zlevel, center, radius, color=False):
         """
         Slices the protein at a given zlevel and returns the information about the protein at that slice
         """
-        return zslice(xyz=self.protein_xyz[frame,:,:], 
+        return _zslice(xyz=self.protein_xyz[frame,:,:], 
                       prot_top=self.protein_top, zlevel=zlevel, 
                       center=center, radius=radius, probe_radius=self.probe_radius, 
                       color=color)
@@ -128,7 +128,7 @@ def protein_section(prot_xyz: np.ndarray, prot_top: md.Topology, zlevel, padding
         return region_shape, color_info
     return region_shape, None
 
-def zslice(xyz, prot_top, zlevel, center, radius, probe_radius, color=False):
+def _zslice(xyz, prot_top, zlevel, center, radius, probe_radius, color=False):
     sliced_protein, color_info = protein_section(prot_xyz=xyz, prot_top=prot_top, zlevel=zlevel, padding=probe_radius, color=color)
     # Area: used to measure pore accessible area
     cylinderxy = Point(*center).buffer(radius)
