@@ -58,6 +58,7 @@ class pore_slices:
                       center=center, radius=radius, probe_radius=self.probe_radius, 
                       color=color)
 
+    # TODO: add probe_radius option
     def slice_run(self, lower, upper, incr, center=(2.5,5), radius=(300**0.5)/10, parallel=False):
         # Levels of z-values to take slices at
         zlevels = np.arange(lower, upper+incr, incr)
