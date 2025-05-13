@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import mdtraj as md
+import matplotlib.pyplot as plt
 
 from shapely.geometry import Point#, MultiPolygon
 from multiprocess.pool import Pool
@@ -58,7 +59,6 @@ class pore_slices:
                       color=color)
 
     def slice_run(self, lower, upper, incr, center=(2.5,5), radius=(300**0.5)/10, parallel=False):
-
         # Levels of z-values to take slices at
         zlevels = np.arange(lower, upper+incr, incr)
         # I think this is the parallel implementation
@@ -81,7 +81,7 @@ class pore_slices:
         else:
             shapes_collect = []
             for f in range(0, self.nframes):
-                print("Analyzing frame %d out of %d" % (f, self.nframes))
+                print("Analyzing frame %d out of %d" % (f+1, self.nframes))
                 for z in zlevels:
                     zslice_shapes = self.zslice(frame=f, zlevel=z, center=center, radius=radius)
                     prot, _, accessible, _ = zslice_shapes
@@ -89,16 +89,19 @@ class pore_slices:
         
         # Turn into df
         slice_df = pd.DataFrame(shapes_collect, columns=["frame", "z", "prot", "void"])
+        # Measure the area of the bounded void regions
+        slice_df['area'] = slice_df.apply(lambda row: row['void'].area, axis=1)
         self.slice_df = slice_df
         return self.slice_df
 
-    def plot_slice(self, axs, prot, cylinder, accessible):
+    def plot_slice(self, axs, prot, accessible, cylinder=None):
         # Plot the protein slice boundaries
         _plot_boundary(axs, prot, color="black")
         _plot_boundary(axs, accessible, color="red")
 
-        x, y = cylinder.boundary.xy
-        axs.plot(x, y, color="cyan", ls="--")
+        if cylinder is not None:
+            x, y = cylinder.boundary.xy
+            axs.plot(x, y, color="cyan", ls="--")
 
         axs.set_aspect('equal', adjustable='box', anchor='C')
         axs.set_xlim(-2,6)
