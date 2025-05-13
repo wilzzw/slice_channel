@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slice_channel"
+version = "0.0.1"
+authors = [
+  { name="wilzzw", email="wilsonzzw@gmail.com" },
+]
+description = "Slice the pore"
+readme = "README.md"
+requires-python = ">=3.8.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/wilzzw/slice_channel"
+Issues = "https://github.com/wilzzw/slice_channel/issues"
