@@ -64,7 +64,7 @@ class pore_slices:
         # I think this is the parallel implementation
         if parallel:
             def proc(xyz, zlevel):
-                zslice_shapes = zslice(xyz, prot_top=self.ref, zlevel=zlevel, center=center, radius=radius, probe_radius=self.probe_radius)
+                zslice_shapes = _zslice(xyz, prot_top=self.ref, zlevel=zlevel, center=center, radius=radius, probe_radius=self.probe_radius)
                 prot, _, accessible, _ = zslice_shapes
                 return prot, accessible
 
@@ -83,7 +83,7 @@ class pore_slices:
             for f in range(0, self.nframes):
                 print("Analyzing frame %d out of %d" % (f, self.nframes))
                 for z in zlevels:
-                    zslice_shapes = self._zslice(frame=f, zlevel=z, center=center, radius=radius)
+                    zslice_shapes = self.zslice(frame=f, zlevel=z, center=center, radius=radius)
                     prot, _, accessible, _ = zslice_shapes
                     shapes_collect.append((f, z, prot, accessible))
         
@@ -103,6 +103,53 @@ class pore_slices:
         axs.set_aspect('equal', adjustable='box', anchor='C')
         axs.set_xlim(-2,6)
         axs.set_ylim(1,9)
+
+    def view_slices(self, frame):
+        """
+        Plot the slices of the protein for inspection
+        """
+        # Get the frame
+        slices_subdf = self.slice_df.query("frame == @frame")
+        for _, row in slices_subdf.iterrows():
+            prot = row['prot']
+            accessible = row['void']
+            z = row['z']
+            area = row['area']
+            fig, axs = plt.subplots()
+            self.plot_slice(axs, prot, accessible)
+            axs.set_title(f"Frame {frame}, z = {z}, area = {area:.2f}")
+            axs.set_xlim(-6,6)
+            axs.set_ylim(-6,6)
+        return
+    
+    def area_vs_z(self, frame, axs: plt.Axes=None):
+        """
+        Plot the area of the slices as a function of z
+        """
+        # Get the frame
+        slices_subdf = self.slice_df.query("frame == @frame")
+        # Get the area
+        area = slices_subdf['area']
+        z = slices_subdf['z']
+        if axs is None:
+            fig, axs = plt.subplots()
+        axs.scatter(z, area)
+        axs.set_xlabel("z")
+        axs.set_ylabel("Area")
+        return axs
+    
+    def calc_volume(self, frame):
+        """
+        Calculate the volume of the enclosed void space by integrating the area of the voids in slices
+        """
+        # Get the frame
+        slices_subdf = self.slice_df.query("frame == @frame")
+        # Get the area
+        area = slices_subdf['area']
+        z = slices_subdf['z']
+        # Calculate the volume by integrating the area
+        volume = np.trapz(area, z)
+        return volume
 
 ### Utility functions ###
 def protein_section(prot_xyz: np.ndarray, prot_top: md.Topology, zlevel, padding, color=False):
