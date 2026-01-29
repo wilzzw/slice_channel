@@ -122,6 +122,8 @@ class pore_slices:
             fig, axs = plt.subplots()
             self.plot_slice(axs, prot, accessible)
             axs.set_title(f"Frame {frame}, z = {z}, area = {area:.2f}")
+
+            # TODO: allow user to set limits
             axs.set_xlim(-6,6)
             axs.set_ylim(-6,6)
         return
